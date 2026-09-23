@@ -1,0 +1,57 @@
+# Django
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+db.sqlite3
+db.sqlite3-journal
+*.log
+*.pot
+*.mo
+local_settings.py
+
+# Media & Static
+media/*
+!media/.gitkeep
+ml_models/*.pt
+ml_models/*.onnx
+ml_models/*.weights
+!ml_models/.gitkeep
+logs/*.csv
+logs/*.log
+!logs/.gitkeep
+staticfiles/
+static_root/
+
+# Env
+.env
+.venv
+venv/
+env/
+ENV/
+ppe_env/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Models large files
+*.pt
+*.pth
+*.onnx
+!ml_models/.gitkeep
+
+# Jupyter
+.ipynb_checkpoints
+
+# PyTorch
+checkpoints/
+runs/

@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Live Monitor — PPE Kalam{% endblock %}
+{% block content %}
+{% if not model_loaded %}
+<div class="alert alert-warning small mb-3"><i class="bi bi-cpu"></i> <strong>Mock mode</strong> — model not loaded. Live stream will annotate with overlay but detect 0 persons until you install Ultralytics & download the model. See <a href="{% url 'monitor:upload' %}">Upload page</a> for test. <code>python manage.py download_models</code></div>
+{% endif %}
+<div class="container-fluid px-4 py-4">
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <h3 class="fw-bold mb-0"><i class="bi bi-camera-video text-primary"></i> Live Monitoring</h3>
+    <div class="d-flex gap-2 align-items-center">
+      <span class="badge bg-dark" id="fps-badge">0 FPS</span>
+      <span class="badge bg-secondary" id="latency-badge">-- ms</span>
+      <a href="{% url 'monitor:dashboard' %}" class="btn btn-sm btn-outline-primary">Analytics</a>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Video column -->
+    <div class="col-lg-8">
+      <div class="card shadow-sm border-0 rounded-4 overflow-hidden">
+        <div class="card-header bg-white d-flex flex-wrap gap-2 justify-content-between align-items-center">
+          <div class="d-flex gap-2 align-items-center">
+            <button id="btn-start" class="btn btn-success fw-bold"><i class="bi bi-play-fill"></i> Start Camera</button>
+            <button id="btn-stop" class="btn btn-outline-danger" disabled><i class="bi bi-stop-fill"></i> Stop</button>
+            <button id="btn-capture" class="btn btn-outline-secondary" disabled><i class="bi bi-camera"></i> Capture</button>
+          </div>
+          <div class="d-flex gap-2 align-items-center">
+            <label class="small text-muted mb-0">Conf</label>
+            <input type="range" id="conf-slider" min="0.1" max="1" step="0.05" value="0.6" style="width:110px">
+            <span class="badge bg-secondary" id="conf-val">0.60</span>
+            <label class="small text-muted mb-0 ms-2">Interval</label>
+            <select id="interval-sel" class="form-select form-select-sm" style="width:auto">
+              <option value="200">200ms</option>
+              <option value="500" selected>500ms</option>
+              <option value="800">800ms</option>
+              <option value="1200">1.2s</option>
+            </select>
+          </div>
+        </div>
+        <div class="position-relative bg-black" style="min-height:420px">
+          <!-- Hidden video element (source) -->
+          <video id="video" autoplay playsinline muted class="w-100 d-none"></video>
+          <!-- Canvas for annotated result -->
+          <canvas id="canvas" class="w-100" style="display:block; max-height:70vh; object-fit:contain; background:#000"></canvas>
+          <!-- Overlay status -->
+          <div id="live-overlay" class="position-absolute top-0 start-0 m-3 p-2 rounded small text-white" style="background:rgba(0,0,0,0.65)">
+            <div>Persons: <span id="ov-persons">0</span> | Compliant: <span id="ov-compliant" class="text-success">0</span> | Violations: <span id="ov-violations" class="text-danger">0</span></div>
+            <div class="text-white-50" id="ov-status">Camera idle — press Start</div>
+          </div>
+          <div id="live-placeholder" class="position-absolute top-50 start-50 translate-middle text-center text-white">
+            <i class="bi bi-camera-video display-3 opacity-50"></i>
+            <p class="mt-2">Click <strong>Start Camera</strong> to begin<br><small class="opacity-75">Browser will ask for camera permission</small></p>
+          </div>
+        </div>
+        <div class="card-footer bg-white small text-muted d-flex justify-content-between">
+          <span><i class="bi bi-info-circle"></i> Frames are sent to <code>/api/process-frame/</code> and annotated with YOLOv10 + ByteTrack.</span>
+          <span id="frame-counter">Frames: 0</span>
+        </div>
+      </div>
+
+      <!-- Upload fallback -->
+      <div class="card shadow-sm border-0 rounded-4 mt-3">
+        <div class="card-body d-flex gap-2 align-items-center flex-wrap">
+          <strong class="small">No camera?</strong>
+          <span class="small text-muted">Upload an image instead:</span>
+          <input type="file" id="fallback-file" accept="image/*" class="form-control form-control-sm" style="width:auto">
+          <button id="fallback-btn" class="btn btn-sm btn-primary">Detect</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Side column -->
+    <div class="col-lg-4">
+      <!-- Compliance now -->
+      <div class="card shadow-sm border-0 rounded-4">
+        <div class="card-header bg-white"><strong>Current Frame — Compliance</strong></div>
+        <div class="card-body" id="compliance-panel">
+          <div class="text-center text-muted py-4">
+            <i class="bi bi-shield display-6"></i>
+            <p class="small mt-2">Start the camera to see live compliance per person.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="row g-2 mt-3">
+        <div class="col-6">
+          <div class="metric-card metric-blue py-3">
+            <div>
+              <div class="metric-label">Active</div>
+              <div class="metric-value" id="side-active">{{ stats.active_violations }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-6">
+          <div class="metric-card metric-green py-3">
+            <div>
+              <div class="metric-label">Compliance</div>
+              <div class="metric-value" id="side-rate">{{ stats.compliance_rate|default:100|floatformat:0 }}%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Server camera alternative -->
+      <div class="card shadow-sm border-0 rounded-4 mt-3">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+          <strong class="small">Server Camera (MJPEG)</strong>
+          <span class="badge bg-warning text-dark">optional</span>
+        </div>
+        <div class="card-body p-2">
+          <img src="{% url 'monitor:video_feed' %}" alt="Server feed" class="w-100 rounded border" style="background:#000; min-height:140px" onerror="this.style.display='none';document.getElementById('mjpeg-hint').style.display='block'">
+          <small id="mjpeg-hint" class="text-muted d-none">Server has no camera attached — use browser webcam above.</small>
+        </div>
+      </div>
+
+      <!-- Help -->
+      <div class="alert alert-light border mt-3 small">
+        <strong>Controls:</strong><br>
+        • <em>Conf</em> adjusts detection confidence (lower = more detections, more false positives).<br>
+        • <em>Interval</em> controls send rate — 500ms is a good balance for CPU.<br>
+        • Captured violations are logged to <code>logs/violations.csv</code> + DB.
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/live_monitor.js' %}"></script>
+<script>
+  // Init with Django URL
+  LiveMonitor.init({
+    processUrl: "{% url 'monitor:api_process_frame' %}",
+    csrfToken: "{{ csrf_token }}"
+  });
+  // File fallback
+  document.getElementById('fallback-btn').addEventListener('click', async ()=>{
+    const f=document.getElementById('fallback-file').files[0];
+    if(!f) return alert('Select an image');
+    const fd=new FormData(); fd.append('image', f); fd.append('csrfmiddlewaretoken', "{{ csrf_token }}");
+    const res=await fetch("{% url 'monitor:api_detect_image' %}", {method:'POST', body:fd});
+    const data=await res.json();
+    if(data.annotated_image){
+      const canvas=document.getElementById('canvas');
+      const ctx=canvas.getContext('2d');
+      const img=new Image(); img.onload=()=>{
+        canvas.width=img.width; canvas.height=img.height; ctx.drawImage(img,0,0);
+        document.getElementById('live-placeholder').style.display='none';
+        updateComplianceUI(data.compliance);
+      }; img.src=data.annotated_image;
+    }
+  });
+  function updateComplianceUI(c){
+    const panel=document.getElementById('compliance-panel');
+    let html='';
+    (c.violations||[]).forEach(v=> html+=`<div class="violation-alert mb-2 p-2 rounded small">🚨 Person #${v.person_id} missing: ${v.missing_items.join(', ')}</div>`);
+    (c.compliant||[]).forEach(v=> html+=`<div class="compliant-status mb-2 p-2 rounded small">✅ Person #${v.person_id} compliant</div>`);
+    if(!html) html='<div class="text-muted small text-center py-3">No persons detected in this frame.</div>';
+    panel.innerHTML=html;
+    document.getElementById('ov-persons').textContent=c.person_count||0;
+    document.getElementById('ov-violations').textContent=(c.violations||[]).length;
+    document.getElementById('ov-compliant').textContent=(c.compliant||[]).length;
+  }
+  // Expose for live_monitor.js
+  window.updateComplianceUI = updateComplianceUI;
+</script>
+{% endblock %}

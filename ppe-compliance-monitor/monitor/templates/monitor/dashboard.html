@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}Analytics — PPE Kalam{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+    <h3 class="fw-bold mb-0"><i class="bi bi-graph-up text-primary"></i> Analytics Dashboard</h3>
+    <div class="d-flex gap-2">
+      <select id="hours-select" class="form-select" style="width:auto">
+        <option value="1" {% if hours == 1 %}selected{% endif %}>Last 1h</option>
+        <option value="6" {% if hours == 6 %}selected{% endif %}>Last 6h</option>
+        <option value="12" {% if hours == 12 %}selected{% endif %}>Last 12h</option>
+        <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24h</option>
+        <option value="48" {% if hours == 48 %}selected{% endif %}>Last 48h</option>
+      </select>
+      <a href="{% url 'monitor:export_csv' %}" class="btn btn-outline-secondary"><i class="bi bi-download"></i> Export CSV</a>
+    </div>
+  </div>
+
+  <!-- Metrics -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+      <div class="metric-card metric-blue">
+        <div class="metric-icon"><i class="bi bi-flag"></i></div>
+        <div><div class="metric-label">Violations ({{ hours }}h)</div><div class="metric-value">{{ stats.total_violations }}</div></div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="metric-card metric-green">
+        <div class="metric-icon"><i class="bi bi-check2-square"></i></div>
+        <div><div class="metric-label">Resolved</div><div class="metric-value">{{ stats.resolved_violations }}</div></div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="metric-card metric-orange">
+        <div class="metric-icon"><i class="bi bi-exclamation-octagon"></i></div>
+        <div><div class="metric-label">Active Now</div><div class="metric-value">{{ stats.active_violations }}</div></div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="metric-card metric-purple">
+        <div class="metric-icon"><i class="bi bi-stopwatch"></i></div>
+        <div><div class="metric-label">Avg Resolution</div><div class="metric-value">{{ stats.avg_resolution_time|floatformat:1 }}s</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-8">
+      <div class="card shadow-sm border-0 rounded-4">
+        <div class="card-header bg-white"><strong>Violation Trend</strong></div>
+        <div class="card-body"><div id="trend-chart" style="height:340px"></div></div>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="card shadow-sm border-0 rounded-4 h-100">
+        <div class="card-header bg-white"><strong>Missing PPE Breakdown</strong></div>
+        <div class="card-body"><div id="pie-chart" style="height:340px"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4 mt-1">
+    <div class="col-lg-6">
+      <div class="card shadow-sm border-0 rounded-4">
+        <div class="card-header bg-white"><strong>Common Missing Items</strong></div>
+        <div class="card-body">
+          {% if stats.common_missing_items %}
+            <div id="bar-chart" style="height:260px"></div>
+          {% else %}
+            <p class="text-muted text-center py-4">No data — start monitoring to see breakdown.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card shadow-sm border-0 rounded-4">
+        <div class="card-header bg-white"><strong>Compliance Summary</strong></div>
+        <div class="card-body">
+          <div class="d-flex align-items-center gap-3 mb-3">
+            <div style="width:120px;height:120px" id="gauge"></div>
+            <div>
+              <div class="display-6 fw-bold text-success">{{ stats.compliance_rate|default:100|floatformat:1 }}%</div>
+              <div class="small text-muted">Compliance rate ({{ hours }}h)</div>
+              <div class="progress mt-2" style="height:8px;width:180px"><div class="progress-bar bg-success" style="width: {{ stats.compliance_rate|default:100 }}%"></div></div>
+            </div>
+          </div>
+          <table class="table table-sm small">
+            <tr><th>Total Detections</th><td>{{ stats.total_violations|add:stats.resolved_violations }}</td></tr>
+            <tr><th>Active Violations</th><td>{{ stats.active_violations }}</td></tr>
+            <tr><th>Avg Resolution</th><td>{{ stats.avg_resolution_time|floatformat:1 }}s</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm border-0 rounded-4 mt-4">
+    <div class="card-header bg-white d-flex justify-content-between"><strong>Raw Trend Data</strong><span class="small text-muted">{{ stats.violation_trend|length }} buckets</span></div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover small mb-0">
+          <thead><tr><th>Hour</th><th>Violations</th></tr></thead>
+          <tbody>
+            {% for t in stats.violation_trend %}
+              <tr><td>{{ t.hour }}</td><td>{{ t.violations }}</td></tr>
+            {% empty %}
+              <tr><td colspan="2" class="text-center text-muted py-3">No trend data</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+const stats = {{ stats_json|safe }};
+function draw(){
+  // Trend
+  const x=(stats.violation_trend||[]).map(d=>d.hour);
+  const y=(stats.violation_trend||[]).map(d=>d.violations);
+  Plotly.newPlot('trend-chart', [{x,y,type:'scatter',mode:'lines+markers', line:{color:'#1E88E5',width:3}, marker:{size:6}, fill:'tozeroy', fillcolor:'rgba(30,136,229,0.12)'}], {margin:{l:40,r:20,t:10,b:40}, paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)', xaxis:{gridcolor:'#f1f5f9'}, yaxis:{gridcolor:'#f1f5f9'}}, {responsive:true, displayModeBar:false});
+  // Pie
+  const labels=Object.keys(stats.common_missing_items||{});
+  const values=Object.values(stats.common_missing_items||{});
+  if(labels.length){
+    Plotly.newPlot('pie-chart', [{labels,values,type:'pie', hole:0.45, marker:{colors:['#1E88E5','#FFC107','#06b6d4','#d946ef','#ef4444']}}], {margin:{l:20,r:20,t:10,b:10}, paper_bgcolor:'rgba(0,0,0,0)'}, {responsive:true, displayModeBar:false});
+    Plotly.newPlot('bar-chart', [{x:labels,y:values,type:'bar', marker:{color:['#1E88E5','#FFC107','#06b6d4','#d946ef']}}], {margin:{l:40,r:20,t:10,b:40}, paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)', xaxis:{tickangle:-20}}, {responsive:true, displayModeBar:false});
+  } else {
+    document.getElementById('pie-chart').innerHTML='<div class="text-center py-5 text-muted"><i class="bi bi-pie-chart display-6"></i><p class="small mt-2">No missing-items data</p></div>';
+  }
+  // Gauge
+  const rate = stats.compliance_rate||100;
+  Plotly.newPlot('gauge', [{type:'indicator', mode:'gauge+number', value:rate, gauge:{axis:{range:[0,100]}, bar:{color:'#4CAF50'}, steps:[{range:[0,50],color:'#fee2e2'},{range:[50,80],color:'#fef3c7'},{range:[80,100],color:'#dcfce7'}]}}], {margin:{l:20,r:20,t:20,b:20}, paper_bgcolor:'rgba(0,0,0,0)'}, {responsive:true, displayModeBar:false});
+}
+draw();
+document.getElementById('hours-select').addEventListener('change', e=> location.href=`?hours=${e.target.value}`);
+</script>
+{% endblock %}

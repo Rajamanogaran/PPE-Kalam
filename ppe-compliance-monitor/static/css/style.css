@@ -1,0 +1,111 @@
+/* PPE Kalam — Django port of Streamlit style.css + expanded theme */
+:root{
+  --primary:#1E88E5;
+  --primary-dark:#1565C0;
+  --success:#4CAF50;
+  --warning:#FFC107;
+  --danger:#ef4444;
+  --dark:#0f172a;
+  --muted:#64748b;
+  --card-radius:16px;
+}
+*{font-family:'Inter', system-ui, -apple-system, sans-serif}
+body{
+  background:#f8fafc;
+  padding-top:64px;
+  color:#1e293b;
+}
+.main-wrapper{min-height:70vh}
+
+/* Navbar */
+.nav-gradient{
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 45%, #1E88E5 100%);
+  backdrop-filter: blur(8px);
+}
+.brand-icon{
+  width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;
+  background:rgba(255,255,255,0.15); border-radius:10px; font-size:1.2rem;
+}
+.navbar .nav-link{ color:rgba(255,255,255,0.85) !important; border-radius:8px; padding:6px 12px !important}
+.navbar .nav-link.active, .navbar .nav-link:hover{ background:rgba(255,255,255,0.15); color:white !important}
+.live-dot{ width:10px;height:10px;border-radius:50%; background:#4CAF50; display:inline-block; box-shadow:0 0 8px rgba(76,175,80,0.6); animation:pulse 1.6s infinite}
+@keyframes pulse{0%{opacity:1}50%{opacity:0.5}100%{opacity:1}}
+
+/* Hero */
+.hero-section{
+  background: radial-gradient(1200px 600px at 20% -10%, #1E88E5 0%, transparent 60%),
+              linear-gradient(135deg, #0f172a 0%, #1e3a5f 60%, #2563eb 100%);
+  padding:2.5rem 0 2rem;
+}
+.hero-overlay{ position:absolute; inset:0; background: linear-gradient(transparent, rgba(15,23,42,0.35));}
+.hero-card{ border:1px solid rgba(255,255,255,0.1)}
+.pulse{ display:inline-block; width:8px;height:8px;background:#22c55e;border-radius:50%; margin-right:6px; animation:pulse 1s infinite }
+
+/* Metric cards — gradient like Streamlit but refined */
+.metric-card{
+  background: white;
+  border-radius: var(--card-radius);
+  padding:1.2rem 1.3rem;
+  display:flex; gap:1rem; align-items:center;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+  border:1px solid #e2e8f0;
+  transition: transform .15s, box-shadow .15s;
+}
+.metric-card:hover{ transform: translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,0.08)}
+.metric-icon{
+  width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+  font-size:1.4rem; flex-shrink:0;
+}
+.metric-blue .metric-icon{ background:#eff6ff; color:var(--primary)}
+.metric-green .metric-icon{ background:#f0fdf4; color:var(--success)}
+.metric-orange .metric-icon{ background:#fff7ed; color:#f97316}
+.metric-purple .metric-icon{ background:#faf5ff; color:#a855f7}
+.metric-label{ font-size:0.75rem; letter-spacing:0.04em; text-transform:uppercase; color:var(--muted); font-weight:600}
+.metric-value{ font-size:1.6rem; font-weight:800; line-height:1; color:var(--dark)}
+.metric-sub{ font-size:0.75rem; color:var(--muted)}
+
+/* Violations / compliant — match Streamlit gradients but as Bootstrap-friendly */
+.violation-alert{
+  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+  color:white; border-left:4px solid #b91c1c;
+}
+.compliant-status{
+  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+  color:white; border-left:4px solid #14532d;
+}
+.violation-item{ border-left:4px solid var(--danger)}
+.resolved-item{ border-left:4px solid var(--success)}
+
+/* Cards */
+.card{ border:1px solid #e2e8f0 }
+.card-header{ border-bottom:1px solid #f1f5f9; font-size:0.95rem}
+
+/* Upload zone */
+.upload-zone{
+  border:2px dashed #cbd5e1; border-radius:16px; padding:2rem 1rem; text-align:center;
+  background:#f8fafc; cursor:pointer; transition: all .15s;
+}
+.upload-zone:hover, .upload-zone.drag-over{ border-color:var(--primary); background:#eff6ff; transform: scale(1.01)}
+
+/* Feature cards */
+.feature-card{
+  background:white; border:1px solid #e2e8f0; border-radius:16px; padding:1.4rem; height:100%;
+}
+.feature-icon{ width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:white;margin-bottom:0.8rem}
+
+/* Footer */
+.footer{ background:#0f172a; border-top:1px solid #1e293b}
+
+/* Utilities */
+.object-fit-cover{ object-fit:cover }
+.rounded-4{ border-radius: var(--card-radius) !important}
+.shadow{ box-shadow:0 4px 20px rgba(0,0,0,0.08) !important}
+
+/* Live page specific */
+#canvas{ background:#000; min-height:360px }
+
+/* Responsive */
+@media (max-width: 768px){
+  .hero-section h1{ font-size:1.7rem}
+  .metric-value{ font-size:1.3rem}
+}

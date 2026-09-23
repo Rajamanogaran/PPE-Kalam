@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Violations — PPE Kalam{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="fw-bold mb-0"><i class="bi bi-exclamation-triangle text-danger"></i> Violations Log</h3>
+    <div class="d-flex gap-2">
+      <a href="{% url 'monitor:export_csv' %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-download"></i> Export CSV</a>
+      <button id="refresh-btn" class="btn btn-primary btn-sm"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+    </div>
+  </div>
+
+  <div class="card shadow-sm border-0 rounded-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+      <span class="small text-muted">Showing last {{ limit }} entries from <code>logs/violations.csv</code> + DB</span>
+      <div class="d-flex gap-2">
+        <select id="limit-sel" class="form-select form-select-sm" style="width:auto">
+          <option value="20" {% if limit == 20 %}selected{% endif %}>20</option>
+          <option value="50" {% if limit == 50 %}selected{% endif %}>50</option>
+          <option value="100" {% if limit == 100 %}selected{% endif %}>100</option>
+        </select>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light small">
+          <tr><th>Time</th><th>Person ID</th><th>Missing Items</th><th>Type</th><th>Duration</th><th>Resolution</th></tr>
+        </thead>
+        <tbody id="violations-tbody" class="small">
+          {% if df.empty %}
+            <tr><td colspan="6" class="text-center text-muted py-4">✅ No violations logged yet. Start monitoring to populate this log.</td></tr>
+          {% else %}
+            {% for _, row in df.iterrows %}
+              <tr class="{% if row.violation_type == 'DETECTED' %}table-danger{% else %}table-success{% endif %}">
+                <td>{{ row.timestamp }}</td>
+                <td><span class="badge bg-dark">#{{ row.person_id }}</span></td>
+                <td>
+                  {% for item in row.missing_items|default:"[]" %}
+                    <span class="badge bg-warning text-dark">{{ item }}</span>
+                  {% empty %}
+                    <span class="text-muted">—</span>
+                  {% endfor %}
+                  {# Fallback if missing_items is string #}
+                  {% if row.missing_items and not row.missing_items|length %}{{ row.missing_items }}{% endif %}
+                </td>
+                <td>
+                  {% if row.violation_type == 'DETECTED' %}<span class="badge bg-danger">DETECTED</span>{% else %}<span class="badge bg-success">RESOLVED</span>{% endif %}
+                </td>
+                <td>{% if row.duration and row.duration != 'nan' %}{{ row.duration|floatformat:1 }}s{% else %}—{% endif %}</td>
+                <td class="text-muted small">{{ row.resolution_time|default:"—" }}</td>
+              </tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% if violations_orm %}
+  <div class="card shadow-sm border-0 rounded-4 mt-4">
+    <div class="card-header bg-white"><strong>DB Violations (ORM)</strong></div>
+    <div class="table-responsive">
+      <table class="table table-sm small mb-0">
+        <thead><tr><th>Time</th><th>Person</th><th>Missing</th><th>Type</th><th>Duration</th></tr></thead>
+        <tbody>
+          {% for v in violations_orm %}
+            <tr><td>{{ v.timestamp|date:"Y-m-d H:i:s" }}</td><td>#{{ v.person_id }}</td><td>{{ v.missing_items_display }}</td><td>{{ v.violation_type }}</td><td>{{ v.duration|default:"—" }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="alert alert-info mt-4 small">
+    <i class="bi bi-info-circle"></i> Violations are buffered for 3 consistent frames before logging to avoid flicker. Each entry captures <em>person_id + missing_items + timestamp</em>. Use <a href="/admin/">Admin</a> for advanced filtering.
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+document.getElementById('limit-sel').addEventListener('change', e=> location.href=`?limit=${e.target.value}`);
+document.getElementById('refresh-btn').addEventListener('click', async ()=>{
+  const res=await fetch("{% url 'monitor:api_violations' %}?limit="+document.getElementById('limit-sel').value);
+  const data=await res.json();
+  const tbody=document.getElementById('violations-tbody');
+  if(!data.violations.length){ tbody.innerHTML='<tr><td colspan="6" class="text-center text-muted py-4">No violations</td></tr>'; return; }
+  tbody.innerHTML=data.violations.map(v=> `
+    <tr class="${v.violation_type==='DETECTED'?'table-danger':'table-success'}">
+      <td>${v.timestamp}</td>
+      <td><span class="badge bg-dark">#${v.person_id}</span></td>
+      <td>${(v.missing_items||[]).map(m=>`<span class="badge bg-warning text-dark">${m}</span>`).join(' ')||'—'}</td>
+      <td><span class="badge ${v.violation_type==='DETECTED'?'bg-danger':'bg-success'}">${v.violation_type}</span></td>
+      <td>${v.duration!=null? v.duration.toFixed(1)+'s':'—'}</td>
+      <td class="small text-muted">${v.resolution_time||'—'}</td>
+    </tr>
+  `).join('');
+});
+</script>
+{% endblock %}

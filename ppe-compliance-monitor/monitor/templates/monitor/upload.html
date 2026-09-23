@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Upload — PPE Kalam{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <h3 class="fw-bold mb-4"><i class="bi bi-cloud-upload text-primary"></i> Image & Video Upload</h3>
+  <div class="row g-4">
+    <div class="col-lg-6">
+      <div class="card shadow-sm border-0 rounded-4">
+        <div class="card-header bg-white"><strong>Image Detection</strong> <span class="badge bg-primary ms-2">YOLOv10</span></div>
+        <div class="card-body">
+          <form method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="mb-3">
+              <label class="form-label">Choose image</label>
+              {{ image_form.image }}
+              <div class="form-text">JPG, PNG, WebP. Max 10MB.</div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Confidence: <span id="conf-val">0.60</span></label>
+              <input type="range" name="confidence" min="0.1" max="1" step="0.05" value="0.6" class="form-range" oninput="document.getElementById('conf-val').textContent=parseFloat(this.value).toFixed(2)">
+            </div>
+            <button type="submit" class="btn btn-primary fw-bold w-100"><i class="bi bi-search"></i> Run Detection</button>
+          </form>
+        </div>
+      </div>
+      <div class="card shadow-sm border-0 rounded-4 mt-3">
+        <div class="card-header bg-white"><strong>Video Detection</strong> <span class="badge bg-warning text-dark">beta</span></div>
+        <div class="card-body">
+          <form method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="mb-3">
+              <label class="form-label">Choose video</label>
+              {{ video_form.video }}
+              <div class="form-text">MP4, AVI, MOV. Max 50MB. First frame preview only (full video API coming soon).</div>
+            </div>
+            <button type="submit" class="btn btn-outline-primary w-100"><i class="bi bi-film"></i> Upload Video</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      {% if annotated_b64 %}
+        <div class="card shadow-sm border-0 rounded-4">
+          <div class="card-header bg-white d-flex justify-content-between"><strong>Result</strong><span class="badge bg-success">{{ result.elapsed }}ms</span></div>
+          <div class="card-body p-2">
+            <img src="{{ annotated_b64 }}" class="w-100 rounded border" alt="Annotated">
+            {% if compliance %}
+              <div class="mt-3">
+                <div class="d-flex gap-2 mb-2">
+                  <span class="badge bg-dark">Persons: {{ compliance.person_count }}</span>
+                  <span class="badge bg-success">Compliant: {{ compliance.compliant|length }}</span>
+                  <span class="badge bg-danger">Violations: {{ compliance.violations|length }}</span>
+                </div>
+                {% for v in compliance.violations %}
+                  <div class="violation-alert mb-2 p-2 rounded small">🚨 Person #{{ v.person_id }} missing: {{ v.missing_items|join:", " }}</div>
+                {% endfor %}
+                {% for c in compliance.compliant %}
+                  <div class="compliant-status mb-2 p-2 rounded small">✅ Person #{{ c.person_id }} compliant</div>
+                {% endfor %}
+                {% if not compliance.violations and not compliance.compliant %}
+                  <div class="text-muted small">No persons detected — try lower confidence or different image.</div>
+                {% endif %}
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% elif result %}
+        {% if result.error %}
+          <div class="alert alert-danger">{{ result.error }}</div>
+        {% else %}
+          <div class="alert alert-success">Upload successful: <code>{{ result.path }}</code></div>
+          {% if result.preview_first_frame and annotated_b64 %}
+            <img src="{{ annotated_b64 }}" class="w-100 rounded border" alt="First frame">
+          {% endif %}
+        {% endif %}
+      {% else %}
+        <div class="card shadow-sm border-0 rounded-4 h-100 d-flex align-items-center justify-content-center p-5 text-center text-muted">
+          <div>
+            <i class="bi bi-image display-3 opacity-25"></i>
+            <p class="mt-3">Upload an image to see annotated result here.<br><small>Bounding boxes + compliance overlay will appear.</small></p>
+            <div class="mt-3 small text-start bg-light p-3 rounded">
+              <strong>Try with:</strong>
+              <ul class="mb-0">
+                <li>Construction site photos</li>
+                <li>Factory floor images</li>
+                <li>Any image with people (COCO fallback works if PPE model not trained)</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+      <div class="alert alert-light border mt-3 small">
+        <strong>API alternative:</strong> <code>POST /api/detect-image/</code> with <code>image</code> multipart field returns JSON with <code>annotated_image</code> base64. Perfect for integrations.
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
