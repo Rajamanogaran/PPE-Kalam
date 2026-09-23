@@ -3,9 +3,13 @@
 {% block title %}Overview — PPE Kalam{% endblock %}
 {% block content %}
 
-{% if not model_loaded %}
+{% if detection_mode == "HOG" %}
+<div class="alert alert-info border-0 rounded-0 mb-0 text-center small">
+  <i class="bi bi-person-bounding-box"></i> <strong>HOG fallback active:</strong> YOLO model not found — using OpenCV HOG person-only detection (every person = violation for missing PPE). For true helmet/vest/gloves/shoes detection, place <code>ml_models/ppe_yolov10n.pt</code> or run <code>python manage.py download_models</code> with internet. Pipeline now <em>does</em> detect persons (synthetic fallback enabled) — upload a photo to test!
+</div>
+{% elif not model_loaded %}
 <div class="alert alert-warning border-0 rounded-0 mb-0 text-center small">
-  <i class="bi bi-exclamation-triangle-fill"></i> <strong>Demo mode:</strong> YOLO model not loaded (Ultralytics/Torch not installed or <code>ml_models/ppe_yolov10n.pt</code> missing). Detection returns mock/empty results. Install full <code>requirements.txt</code> and run <code>python manage.py download_models</code> for real inference. Upload & live pipeline work, but will show 0 persons until model is present.
+  <i class="bi bi-exclamation-triangle-fill"></i> <strong>Demo mode:</strong> YOLO model not loaded (Ultralytics/Torch not installed or <code>ml_models/ppe_yolov10n.pt</code> missing) and HOG not available. Detection returns empty. Install full <code>requirements.txt</code> and run <code>python manage.py download_models</code> for real inference.
 </div>
 {% endif %}
 <!-- Hero -->

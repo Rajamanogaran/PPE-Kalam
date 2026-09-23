@@ -56,11 +56,14 @@
   <script>
     // Clock
     setInterval(()=>{ const el=document.getElementById('clock'); if(el) el.textContent=new Date().toLocaleTimeString(); },1000);
-    // Live indicator pulse
+    // Live indicator pulse: green=YOLO, blue=HOG, yellow=MOCK
     fetch("{% url 'monitor:api_health' %}").then(r=>r.json()).then(d=>{
       const dot=document.getElementById('live-indicator');
-      if(dot) dot.style.background = d.model_loaded ? '#4CAF50' : '#FFC107';
-      dot.title = d.model_loaded ? 'Model loaded' : 'Model fallback / mock';
+      if(!dot) return;
+      const mode = d.detection_mode || (d.model_loaded ? 'YOLO' : 'MOCK');
+      if(mode === 'YOLO') { dot.style.background='#4CAF50'; dot.title='YOLO loaded — full PPE detection'; }
+      else if(mode === 'HOG') { dot.style.background='#0ea5e9'; dot.title='HOG fallback — person-only, PPE will show as violation'; }
+      else { dot.style.background='#FFC107'; dot.title='Mock — no detection'; }
     }).catch(()=>{});
   </script>
   {% block extra_js %}{% endblock %}

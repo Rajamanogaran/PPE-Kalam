@@ -106,14 +106,25 @@ def _process_frame_array(frame, confidence=None, iou=None):
 
 # ---------- Page Views ----------
 
-def _model_status():
+def _detection_mode():
+    """Return current detection backend: YOLO (full PPE), HOG (person-only fallback), or MOCK (empty)."""
     try:
         from pathlib import Path
         from django.conf import settings as s
         if (Path(s.PPE_ML_MODELS_DIR) / "ppe_yolov10n.pt").exists():
-            return True
+            return "YOLO"
         det = get_detector()
-        return det.model is not None
+        if det.model is not None:
+            return "YOLO"
+        if getattr(det, "hog", None) is not None:
+            return "HOG"
+        return "MOCK"
+    except:
+        return "MOCK"
+
+def _model_status():
+    try:
+        return _detection_mode() == "YOLO"
     except:
         return False
 
@@ -126,6 +137,7 @@ def index(request):
         'stats': stats,
         'form': form,
         'model_loaded': _model_status(),
+        'detection_mode': _detection_mode(),
         'active_page': 'home',
         'stats_json': json.dumps(stats, default=str),
     }
@@ -138,6 +150,7 @@ def live_monitor(request):
     context = {
         'stats': stats,
         'model_loaded': _model_status(),
+        'detection_mode': _detection_mode(),
         'active_page': 'live',
     }
     return render(request, 'monitor/live.html', context)
@@ -153,6 +166,7 @@ def dashboard(request):
         'hours': hours,
         'recent_df': recent_df,
         'model_loaded': _model_status(),
+        'detection_mode': _detection_mode(),
         'active_page': 'dashboard',
         'stats_json': json.dumps(stats, default=str),
     }
@@ -172,6 +186,7 @@ def violations_log(request):
         'df': df,
         'violations_orm': violations_orm,
         'model_loaded': _model_status(),
+        'detection_mode': _detection_mode(),
         'active_page': 'violations',
         'limit': limit,
     }
@@ -228,6 +243,7 @@ def upload_view(request):
         'annotated_b64': annotated_b64,
         'compliance': compliance,
         'model_loaded': model_loaded,
+        'detection_mode': _detection_mode(),
         'active_page': 'upload',
     }
     return render(request, 'monitor/upload.html', context)
@@ -371,18 +387,19 @@ def api_violations(request):
 def api_health(request):
     """Health check"""
     has_model = False
+    mode = "MOCK"
     try:
         from django.conf import settings
         has_model = (Path(settings.PPE_ML_MODELS_DIR) / "ppe_yolov10n.pt").exists()
-        # Also check ultralytics cache for yolov10n.pt
         if not has_model:
-            # Check if detector loaded
             det = get_detector()
             has_model = det.model is not None
+        mode = _detection_mode()
     except: pass
     return JsonResponse({
         'status': 'ok',
         'model_loaded': has_model,
+        'detection_mode': mode,
         'timestamp': timezone.now().isoformat(),
     })
 

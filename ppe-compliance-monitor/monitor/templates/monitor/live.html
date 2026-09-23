@@ -2,8 +2,10 @@
 {% load static %}
 {% block title %}Live Monitor — PPE Kalam{% endblock %}
 {% block content %}
-{% if not model_loaded %}
-<div class="alert alert-warning small mb-3"><i class="bi bi-cpu"></i> <strong>Mock mode</strong> — model not loaded. Live stream will annotate with overlay but detect 0 persons until you install Ultralytics & download the model. See <a href="{% url 'monitor:upload' %}">Upload page</a> for test. <code>python manage.py download_models</code></div>
+{% if detection_mode == "HOG" %}
+<div class="alert alert-info small mb-3"><i class="bi bi-person-bounding-box"></i> <strong>HOG fallback active</strong> — YOLO model not found (offline). Person detection uses OpenCV HOG (person-only, PPE items not distinguished — every person will show as violation for missing helmet/vest/gloves/shoes). For full PPE (helmet, vest, gloves, shoes) detection, place a <code>ppe_yolov10n.pt</code> in <code>ml_models/</code> or run <code>python manage.py download_models</code> with internet. Set <code>PPE_MOCK_DEMO=1</code> for synthetic demo, <code>PPE_SYNTHETIC_FALLBACK=0</code> to disable synthetic fallback.</div>
+{% elif not model_loaded %}
+<div class="alert alert-warning small mb-3"><i class="bi bi-cpu"></i> <strong>Mock mode</strong> — model not loaded and HOG unavailable. Live stream will annotate with overlay but detect 0 persons until you install dependencies. <code>pip install ultralytics supervision opencv-python-headless</code> then <code>python manage.py download_models</code></div>
 {% endif %}
 <div class="container-fluid px-4 py-4">
   <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">

@@ -2,6 +2,11 @@
 {% block title %}Upload — PPE Kalam{% endblock %}
 {% block content %}
 <div class="container py-4">
+  {% if detection_mode == "HOG" %}
+  <div class="alert alert-info small"><i class="bi bi-person-bounding-box"></i> <strong>HOG fallback active</strong> — YOLO model not found, using person-only detection. Every detected person will be flagged as violation (missing helmet/vest/gloves/shoes). For true PPE detection, add <code>ml_models/ppe_yolov10n.pt</code> or run <code>python manage.py download_models</code> with internet.</div>
+  {% elif not model_loaded %}
+  <div class="alert alert-warning small"><i class="bi bi-cpu"></i> <strong>Mock mode</strong> — model not loaded. Uploads will show 0 detections. Install dependencies first.</div>
+  {% endif %}
   <h3 class="fw-bold mb-4"><i class="bi bi-cloud-upload text-primary"></i> Image & Video Upload</h3>
   <div class="row g-4">
     <div class="col-lg-6">
