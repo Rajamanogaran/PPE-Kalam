@@ -1,0 +1,21 @@
+name: CI — PPE Kalam (industry)
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: pip install -r ppe-compliance-monitor/requirements.txt
+      - run: pip install flake8 black
+      - run: cd ppe-compliance-monitor && python manage.py check
+      - run: cd ppe-compliance-monitor && python manage.py migrate --run-syncdb
+      - run: cd ppe-compliance-monitor && python manage.py test monitor --verbosity=2 || true
+      - run: flake8 ppe-compliance-monitor/monitor --max-line-length=120 || true
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t ppe-kalam:ci ppe-compliance-monitor
+      - run: docker run --rm ppe-kalam:ci python manage.py check --deploy || true

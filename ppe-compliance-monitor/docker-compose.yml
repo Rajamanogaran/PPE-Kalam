@@ -1,0 +1,49 @@
+# Industry: compose for dev (SQLite) and prod (Postgres + Redis)
+version: "3.9"
+services:
+  web:
+    build: .
+    ports: ["8000:8000"]
+    env_file: .env
+    environment:
+      - DJANGO_DEBUG=False
+      - DJANGO_ALLOWED_HOSTS=*
+    volumes:
+      - ./media:/app/media
+      - ./ml_models:/app/ml_models
+      - ./logs:/app/logs
+    depends_on:
+      - db
+      - redis
+    command: gunicorn ppe_project.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120 --access-logfile - --error-logfile -
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ppe_kalam
+      POSTGRES_USER: ppe
+      POSTGRES_PASSWORD: ppe
+    volumes: [pgdata:/var/lib/postgresql/data]
+    ports: ["5432:5432"]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    restart: unless-stopped
+
+  # Optional: celery beat for camera health checks (every 60s)
+  # beat:
+  #   build: .
+  #   command: python manage.py check_cameras --loop --interval 60
+  #   env_file: .env
+  #   depends_on: [db, redis]
+
+volumes:
+  pgdata:
