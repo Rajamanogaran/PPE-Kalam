@@ -194,11 +194,11 @@ class Migration(migrations.Migration):
         ),
         migrations.AddConstraint(
             model_name='ipcamera',
-            constraint=models.CheckConstraint(condition=models.Q(('port__gte', 1), ('port__lte', 65535)), name='port_range'),
+            constraint=models.CheckConstraint(check=models.Q(('port__gte', 1), ('port__lte', 65535)), name='port_range'),
         ),
         migrations.AddConstraint(
             model_name='ipcamera',
-            constraint=models.CheckConstraint(condition=models.Q(('confidence_threshold__gte', 0.1), ('confidence_threshold__lte', 1.0)), name='conf_range'),
+            constraint=models.CheckConstraint(check=models.Q(('confidence_threshold__gte', 0.1), ('confidence_threshold__lte', 1.0)), name='conf_range'),
         ),
         migrations.AddIndex(
             model_name='camerahealthlog',
