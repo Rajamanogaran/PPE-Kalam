@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{% if camera %}Edit {{ camera.name }}{% else %}Add Camera{% endif %} — PPE Kalam{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="fw-bold mb-0">{% if camera %}<i class="bi bi-pencil-square text-primary"></i> Edit {{ camera.name }}{% else %}<i class="bi bi-plus-circle text-primary"></i> Add IP Camera{% endif %}</h3>
+    <a href="{% url 'monitor:camera_list' %}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back to Cameras</a>
+  </div>
+
+  <div class="card shadow-sm border-0 rounded-4">
+    <div class="card-body">
+      <form method="post">
+        {% csrf_token %}
+        <div class="row g-3">
+          {% for field in form %}
+            <div class="col-md-{% if field.name in 'name,ip_address,port,protocol' %}6{% elif field.name == 'stream_path' %}6{% elif field.name in 'username,password' %}6{% elif field.name in 'is_active,detection_enabled' %}6{% elif field.name == 'confidence_threshold' %}4{% else %}12{% endif %}">
+              <label class="form-label small fw-semibold">{{ field.label }}</label>
+              {{ field }}
+              {% if field.help_text %}<div class="form-text small">{{ field.help_text }}</div>{% endif %}
+              {% if field.errors %}<div class="text-danger small">{{ field.errors }}</div>{% endif %}
+            </div>
+          {% endfor %}
+        </div>
+        <div class="mt-4 d-flex gap-2">
+          <button type="submit" class="btn btn-primary fw-bold px-4">{% if camera %}Save Changes{% else %}Add Camera{% endif %}</button>
+          <a href="{% url 'monitor:camera_list' %}" class="btn btn-secondary">Cancel</a>
+          {% if camera %}
+            <a href="{% url 'monitor:camera_stream' camera.id %}" target="_blank" class="btn btn-outline-success ms-auto"><i class="bi bi-play-circle"></i> Live Stream</a>
+            <button type="button" class="btn btn-outline-primary" onclick="fetch('{% url 'monitor:camera_test' camera.id %}').then(r=>r.json()).then(j=>alert((j.ok?'✅ ':'❌ ')+j.message))">Test Connection</button>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {% if camera %}
+  <div class="card shadow-sm border-0 rounded-4 mt-4">
+    <div class="card-header bg-white"><strong>Camera Info</strong></div>
+    <div class="card-body small">
+      <div class="row">
+        <div class="col-md-6"><strong>Stream URL:</strong><br><code>{{ camera.stream_url }}</code><br><small class="text-muted">Display: {{ camera.display_url }}</small></div>
+        <div class="col-md-6"><strong>Status:</strong> {{ camera.get_status_display }}<br><strong>Last seen:</strong> {{ camera.last_seen|default:"—" }}<br><strong>Created:</strong> {{ camera.created_at }}</div>
+      </div>
+      <div class="mt-3">
+        <img src="{% url 'monitor:camera_snapshot' camera.id %}?detect=1" alt="snapshot" class="w-100 rounded border" style="max-height:360px; object-fit:contain; background:#000" onerror="this.src='https://via.placeholder.com/640x360/111/555?text=No+Frame'">
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

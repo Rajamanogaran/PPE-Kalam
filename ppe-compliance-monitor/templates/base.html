@@ -27,6 +27,7 @@
         <ul class="navbar-nav ms-auto gap-1">
           <li class="nav-item"><a class="nav-link {% if active_page == 'home' %}active{% endif %}" href="{% url 'monitor:index' %}"><i class="bi bi-house-door"></i> Overview</a></li>
           <li class="nav-item"><a class="nav-link {% if active_page == 'live' %}active{% endif %}" href="{% url 'monitor:live' %}"><i class="bi bi-camera-video"></i> Live Monitor</a></li>
+          <li class="nav-item"><a class="nav-link {% if active_page == 'cameras' %}active{% endif %}" href="{% url 'monitor:camera_list' %}"><i class="bi bi-hdd-network"></i> IP Cameras</a></li>
           <li class="nav-item"><a class="nav-link {% if active_page == 'dashboard' %}active{% endif %}" href="{% url 'monitor:dashboard' %}"><i class="bi bi-graph-up"></i> Analytics</a></li>
           <li class="nav-item"><a class="nav-link {% if active_page == 'upload' %}active{% endif %}" href="{% url 'monitor:upload' %}"><i class="bi bi-cloud-upload"></i> Upload</a></li>
           <li class="nav-item"><a class="nav-link {% if active_page == 'violations' %}active{% endif %}" href="{% url 'monitor:violations' %}"><i class="bi bi-exclamation-triangle"></i> Violations</a></li>

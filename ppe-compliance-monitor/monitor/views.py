@@ -34,7 +34,8 @@ from django.utils import timezone
 from .utils.config import PPEConfig
 from .utils.detector import get_detector
 from .utils.violation_tracker import get_tracker
-from .forms import ImageUploadForm, VideoUploadForm
+from .forms import ImageUploadForm, VideoUploadForm, IPCameraForm, BulkIPForm
+from .models import IPCamera
 
 logger = logging.getLogger(__name__)
 
@@ -434,3 +435,365 @@ def export_violations_csv(request):
             resp['Content-Disposition'] = 'attachment; filename="violations.csv"'
             return resp
     return HttpResponse("No violations logged yet.", content_type="text/plain", status=404)
+
+# ---------- IP Camera Management ----------
+import re
+
+def ip_camera_list(request):
+    """List all configured IP cameras with status and quick actions"""
+    cameras = IPCamera.objects.all().order_by('-is_active', 'name')
+    stats = {
+        'total': cameras.count(),
+        'active': cameras.filter(is_active=True).count(),
+        'detection_on': cameras.filter(detection_enabled=True, is_active=True).count(),
+        'error': cameras.filter(status='error').count(),
+    }
+    # Also get violation counts per camera if ORM has data
+    form = IPCameraForm()
+    bulk_form = BulkIPForm()
+    context = {
+        'cameras': cameras,
+        'stats': stats,
+        'form': form,
+        'bulk_form': bulk_form,
+        'model_loaded': _model_status(),
+        'active_page': 'cameras',
+    }
+    return render(request, 'monitor/cameras.html', context)
+
+def ip_camera_create(request):
+    if request.method == 'POST':
+        form = IPCameraForm(request.POST)
+        if form.is_valid():
+            cam = form.save()
+            # Try to test connection async? just save and redirect
+            from django.contrib import messages
+            messages.success(request, f"Camera '{cam.name}' added ({cam.ip_address}:{cam.port})")
+            return JsonResponse({'ok': True, 'id': cam.id, 'name': cam.name}) if request.headers.get('x-requested-with') == 'XMLHttpRequest' else render(request, 'monitor/camera_form.html', {'form': IPCameraForm(), 'created': cam})
+        else:
+            if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                return JsonResponse({'ok': False, 'errors': form.errors}, status=400)
+    else:
+        form = IPCameraForm()
+    # For non-AJAX, render inline? We'll handle via cameras page modal; direct GET shows form
+    if request.method == 'GET' and not request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        return render(request, 'monitor/camera_form.html', {'form': form, 'active_page': 'cameras', 'model_loaded': _model_status()})
+    return JsonResponse({'ok': False, 'errors': form.errors if 'form' in locals() else {}}, status=400)
+
+def ip_camera_edit(request, pk):
+    try:
+        cam = IPCamera.objects.get(pk=pk)
+    except IPCamera.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    if request.method == 'POST':
+        form = IPCameraForm(request.POST, instance=cam)
+        if form.is_valid():
+            cam = form.save()
+            return JsonResponse({'ok': True, 'id': cam.id})
+        else:
+            return JsonResponse({'ok': False, 'errors': form.errors}, status=400)
+    else:
+        form = IPCameraForm(instance=cam)
+        return render(request, 'monitor/camera_form.html', {'form': form, 'camera': cam, 'active_page': 'cameras', 'model_loaded': _model_status()})
+
+@csrf_exempt
+def ip_camera_delete(request, pk):
+    if request.method not in ('POST','DELETE'):
+        return JsonResponse({'error': 'Use POST/DELETE'}, status=405)
+    try:
+        cam = IPCamera.objects.get(pk=pk)
+        name = cam.name
+        cam.delete()
+        return JsonResponse({'ok': True, 'name': name})
+    except IPCamera.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+@csrf_exempt
+def ip_camera_toggle(request, pk):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    try:
+        cam = IPCamera.objects.get(pk=pk)
+        field = request.POST.get('field', 'is_active')
+        if field not in ('is_active','detection_enabled'):
+            field = 'is_active'
+        setattr(cam, field, not getattr(cam, field))
+        cam.save(update_fields=[field, 'updated_at'])
+        return JsonResponse({'ok': True, 'field': field, 'value': getattr(cam, field)})
+    except IPCamera.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+def ip_camera_test(request, pk):
+    try:
+        cam = IPCamera.objects.get(pk=pk)
+    except IPCamera.DoesNotExist:
+        return JsonResponse({'ok': False, 'error': 'Not found'}, status=404)
+    ok, msg = cam.test_connection()
+    # Update status
+    cam.status = 'active' if ok else 'error'
+    cam.last_error = '' if ok else msg[:500]
+    if ok:
+        from django.utils import timezone as tz
+        cam.last_seen = tz.now()
+    cam.save(update_fields=['status','last_error','last_seen','updated_at'])
+    return JsonResponse({'ok': ok, 'message': msg, 'status': cam.status, 'url': cam.display_url})
+
+def ip_camera_snapshot(request, pk):
+    """Return a single JPEG snapshot from the IP camera with optional PPE overlay"""
+    try:
+        cam = IPCamera.objects.get(pk=pk)
+    except IPCamera.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    if not HAS_CV2:
+        return JsonResponse({'error': 'OpenCV not available'}, status=500)
+    detect = request.GET.get('detect', '1') == '1'
+    # Try to capture
+    try:
+        cap = cv2.VideoCapture(cam.stream_url)
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
+        if not cap.isOpened():
+            return JsonResponse({'error': f'Cannot open {cam.display_url}'}, status=502)
+        ret, frame = cap.read()
+        cap.release()
+        if not ret or frame is None:
+            return JsonResponse({'error': 'No frame received'}, status=502)
+        # Update last_seen
+        try:
+            cam.last_seen = timezone.now()
+            cam.status = 'active'
+            cam.last_error = ''
+            cam.save(update_fields=['last_seen','status','last_error'])
+        except: pass
+
+        if detect and cam.detection_enabled:
+            try:
+                cfg = PPEConfig()
+                cfg.CONFIDENCE_THRESHOLD = cam.confidence_threshold
+                from .utils.detector import PPEDetector
+                detector = PPEDetector(cfg)
+                detections = detector.detect(frame)
+                compliance = detector.analyze_compliance(detections)
+                # Add camera id to violation log? Track
+                frame = detector.annotate_frame(frame, detections, compliance)
+                # Optionally log violations with camera link
+                # we pass compliance through header? For snapshot we don't log to CSV to avoid spam, but could
+            except Exception as e:
+                logger.warning(f"Snapshot detect failed: {e}")
+        # Encode jpeg
+        ret2, buf = cv2.imencode('.jpg', frame)
+        if not ret2:
+            return JsonResponse({'error': 'Encode failed'}, status=500)
+        return HttpResponse(buf.tobytes(), content_type='image/jpeg')
+    except Exception as e:
+        logger.exception("snapshot error")
+        return JsonResponse({'error': str(e)}, status=500)
+
+def ip_camera_stream(request, pk):
+    """MJPEG stream from IP camera with live PPE detection overlay"""
+    try:
+        cam = IPCamera.objects.get(pk=pk)
+    except IPCamera.DoesNotExist:
+        return HttpResponse("Camera not found", status=404)
+    if not HAS_CV2:
+        return HttpResponse("OpenCV not installed", status=500)
+
+    def gen():
+        # Try to open
+        import os
+        if cam.protocol == 'rtsp_tcp':
+            os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'rtsp_transport;tcp'
+        cap = cv2.VideoCapture(cam.stream_url)
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 7000)
+        if not cap.isOpened():
+            # Send error frame
+            err = np.zeros((480,640,3), dtype=np.uint8)
+            cv2.putText(err, f"Cannot open {cam.display_url}", (20,240), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255),2)
+            cv2.putText(err, f"Check IP/port/path", (20,270), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255),1)
+            ret, buf = cv2.imencode('.jpg', err)
+            yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + buf.tobytes() + b'\r\n')
+            return
+        # Setup detector per camera
+        cfg = PPEConfig()
+        cfg.CONFIDENCE_THRESHOLD = cam.confidence_threshold
+        try:
+            from .utils.detector import PPEDetector
+            detector = PPEDetector(cfg)
+        except:
+            detector = get_detector()
+        tracker = get_tracker()
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret or frame is None:
+                    time.sleep(0.1)
+                    continue
+                # Run detection if enabled
+                if cam.detection_enabled:
+                    try:
+                        detections = detector.detect(frame)
+                        compliance = detector.analyze_compliance(detections)
+                        # Tag violations with camera
+                        if compliance.get('violations'):
+                            # Log with camera association in DB if needed
+                            tracker.update(compliance, datetime.now())
+                            # Also try to save Violation with camera FK (if tracker would do? We'll do extra)
+                            try:
+                                from .models import Violation as V
+                                for v in compliance['violations']:
+                                    V.objects.create(
+                                        person_id=str(v['person_id']),
+                                        missing_items=v['missing_items'],
+                                        violation_type='DETECTED',
+                                        camera=cam,
+                                        timestamp=timezone.now()
+                                    )
+                            except: pass
+                        frame = detector.annotate_frame(frame, detections, compliance)
+                        # Add camera name overlay
+                        cv2.putText(frame, f"{cam.name} ({cam.ip_address})", (10, frame.shape[0]-15), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255),1, cv2.LINE_AA)
+                        cv2.putText(frame, f"{'DETECT ON' if cam.detection_enabled else 'DETECT OFF'}", (frame.shape[1]-140, frame.shape[0]-15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0) if cam.detection_enabled else (0,0,255),1)
+                    except Exception as e:
+                        logger.warning(f"camera stream detect error: {e}")
+                # Encode
+                ret2, buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                if not ret2:
+                    continue
+                yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + buf.tobytes() + b'\r\n')
+                time.sleep(0.04)  # ~25 fps cap
+        finally:
+            cap.release()
+
+    return StreamingHttpResponse(gen(), content_type='multipart/x-mixed-replace; boundary=frame')
+
+@csrf_exempt
+def ip_camera_bulk_add(request):
+    """Bulk add IP addresses from textarea"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    form = BulkIPForm(request.POST)
+    if not form.is_valid():
+        return JsonResponse({'ok': False, 'errors': form.errors}, status=400)
+    raw = form.cleaned_data['ips']
+    protocol = form.cleaned_data['protocol']
+    location = form.cleaned_data.get('location') or ''
+    conf = form.cleaned_data.get('confidence_threshold') or 0.6
+
+    lines = [l.strip() for l in raw.splitlines() if l.strip()]
+    created = []
+    errors = []
+    for line in lines:
+        try:
+            # Parse various formats
+            # If line contains :// then it's full URL
+            ip = None
+            port = None
+            path = "/stream1"
+            username = ""
+            password = ""
+            name = ""
+
+            # Try to extract via regex for full url
+            m = re.match(r'^(?:(?P<proto>rtsp|http|https)://)?(?:(?P<user>[^:]+):(?P<pass>[^@]+)@)?(?P<host>[^:/\s]+)(?::(?P<port>\d+))?(?P<path>/\S*)?', line)
+            if m and m.group('host'):
+                host = m.group('host')
+                ip = host
+                if m.group('port'):
+                    port = int(m.group('port'))
+                else:
+                    port = 554 if protocol.startswith('rtsp') else (443 if protocol=='https' else 80)
+                if m.group('path'):
+                    path = m.group('path')
+                if m.group('user'):
+                    username = m.group('user')
+                if m.group('pass'):
+                    password = m.group('pass')
+                if m.group('proto'):
+                    protocol_eff = m.group('proto')
+                    # map to our choices
+                    if protocol_eff not in dict(IPCamera.PROTOCOL_CHOICES):
+                        protocol_eff = protocol
+                else:
+                    protocol_eff = protocol
+            else:
+                # simple IP
+                ip = line
+                port = 554
+                path = "/stream1"
+                protocol_eff = protocol
+
+            # Validate IP/host
+            try:
+                ipaddress.ip_address(ip)
+            except:
+                # allow hostname
+                if '.' not in ip:
+                    raise ValueError("Invalid IP/hostname")
+
+            # Auto-name from IP
+            name = f"Cam-{ip.replace('.','-')}"
+            # Check existing
+            if IPCamera.objects.filter(ip_address=ip, port=port, stream_path=path).exists():
+                errors.append(f"{line}: already exists")
+                continue
+
+            cam = IPCamera.objects.create(
+                name=name,
+                ip_address=ip,
+                port=port,
+                protocol=protocol_eff,
+                stream_path=path,
+                username=username,
+                password=password,
+                location=location,
+                confidence_threshold=conf,
+                is_active=True,
+                detection_enabled=True,
+            )
+            created.append({'id': cam.id, 'name': cam.name, 'ip': cam.ip_address})
+        except Exception as e:
+            errors.append(f"{line}: {e}")
+
+    return JsonResponse({'ok': True, 'created': created, 'errors': errors, 'count': len(created)})
+
+def api_camera_list(request):
+    cams = IPCamera.objects.all().order_by('name')
+    data = []
+    for c in cams:
+        data.append({
+            'id': c.id,
+            'name': c.name,
+            'ip_address': c.ip_address,
+            'port': c.port,
+            'protocol': c.protocol,
+            'stream_path': c.stream_path,
+            'stream_url': c.display_url,
+            'location': c.location,
+            'is_active': c.is_active,
+            'detection_enabled': c.detection_enabled,
+            'status': c.status,
+            'last_seen': c.last_seen.isoformat() if c.last_seen else None,
+            'confidence_threshold': c.confidence_threshold,
+        })
+    return JsonResponse({'cameras': data, 'count': len(data)})
+
+def api_camera_detail(request, pk):
+    try:
+        c = IPCamera.objects.get(pk=pk)
+        return JsonResponse({
+            'id': c.id,
+            'name': c.name,
+            'ip_address': c.ip_address,
+            'port': c.port,
+            'protocol': c.protocol,
+            'stream_path': c.stream_path,
+            'stream_url': c.display_url,
+            'full_url': c.stream_url,
+            'location': c.location,
+            'is_active': c.is_active,
+            'detection_enabled': c.detection_enabled,
+            'status': c.status,
+            'last_seen': c.last_seen.isoformat() if c.last_seen else None,
+            'confidence_threshold': c.confidence_threshold,
+        })
+    except IPCamera.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
